@@ -1,0 +1,54 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: express-server-deployment
+  labels:
+    app: express-server
+spec:
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  replicas: 3
+  selector:
+    matchLabels:
+      app: express-server
+  template:
+    metadata:
+      labels:
+        app: express-server
+    spec:
+      containers:
+        - name: express-server
+          image:docker.io/sandeepputta2001/cicd-argocd:45b4a17b
+          resources:
+            requests:
+              cpu: "20m"
+              memory: "55M"
+            limits:
+              cpu: "100m"
+              memory: "128M"
+          livenessProbe:
+            httpGet:
+              path: /_status/healthz
+              port: 3002
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /_status/healthz
+              port: 3002
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          ports:
+            - name: serverport
+              containerPort: 3002
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}

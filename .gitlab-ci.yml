@@ -1,0 +1,68 @@
+---
+image: docker:latest
+
+stages:
+  - build
+  - test
+  - deploy
+
+variables:
+  K8S_MANIFESTS_PATH: k8s/deployment.yaml
+  IMAGE: $DOCKER_REGISTRY/$DOCKER_USERNAME/$CI_PROJECT_NAME
+  GITLAB_USERNAME: sandeepputta
+
+build_image:
+  stage: build
+  before_script:
+    - echo "Logging into docker registry"
+    - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin "$DOCKER_REGISTRY"
+
+  services:
+    - name: docker:dind
+      command: ["--dns", "127.0.0.1", "--dns", "8.8.8.8"] # Explicit DNS settings
+
+  variables:
+    DOCKER_HOST: tcp://docker:2375 # Matching the service configuration
+    DOCKER_TLS_CERTDIR: "" # Disabling TLS for Docker-in-Docker..
+
+  script:
+    - echo "Building docker image"
+    - docker build -t $IMAGE:$CI_COMMIT_SHORT_SHA .
+    - echo "Image built successfully"
+    - echo "Pushing docker image to docker hub"
+    - docker push $IMAGE:$CI_COMMIT_SHORT_SHA
+    - echo "Image pushed to docker hub successfully"
+
+  rules:
+    - if: '$CI_COMMIT_MESSAGE != "ARGOCD added latest docker image in $K8S_MANIFESTS_PATH file" && $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_NAME == "main"'
+
+test:
+  stage: test
+  image: node:latest
+  script:
+    - npm install -y mocha chai supertest superset
+    - echo "Running tests"
+    - npm test
+
+  rules:
+    - if: '$CI_COMMIT_MESSAGE != "ARGOCD added latest docker image in $K8S_MANIFESTS_PATH file" && $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_NAME == "main"'
+
+deploying:
+  stage: deploy
+  image: debian:latest
+  before_script:
+    - apt-get update
+    - apt-get install -y git sed
+  script:
+    - git config --global user.email "gitlab-ci@example.com"
+    - git config --global user.name "ARGOCD"
+    - echo "updating k8s manifests with new image"
+    - sed -i "s|image:.*|image:$IMAGE:$CI_COMMIT_SHORT_SHA|" $K8S_MANIFESTS_PATH
+    - echo "Commiting updated changes to git"
+    - git add $K8S_MANIFESTS_PATH
+    - git commit -m "ARGOCD added latest docker image in $K8S_MANIFESTS_PATH file [skip ci]"
+    - git push https://${GITLAB_USERNAME}:${GITLAB_TOKEN}@gitlab.com/$CI_PROJECT_NAMESPACE/$CI_PROJECT_NAME.git HEAD:main
+    - echo "successfully pushed to main"
+
+  rules:
+    - if: '$CI_COMMIT_MESSAGE != "ARGOCD added latest docker image in $K8S_MANIFESTS_PATH file" && $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_NAME == "main"'
